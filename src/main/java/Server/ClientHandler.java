@@ -1,5 +1,4 @@
 package Server;
-
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -10,6 +9,7 @@ public class ClientHandler {
     private final ChatServer server;
     private final DataInputStream in;
     private final DataOutputStream out;
+
     private String name;
 
     public ClientHandler(Socket socket, ChatServer server) {
@@ -20,75 +20,67 @@ public class ClientHandler {
             this.in = new DataInputStream(socket.getInputStream());
             this.out = new DataOutputStream(socket.getOutputStream());
             new Thread(() -> {
-                while (true) {
-                    try {
-                        authenticate();
-                        readMessages();
-                    } finally {
-                        closeConnection();
-                    }
+                try {
+                    authenticate();
+                    readMessages();
+                } finally {
+                    closeConnection();
                 }
-
-            }).start();// :: означает что это ссылка на метод
-
-        }catch (IOException e ){
-            throw  new RuntimeException(" не могу создать обработчик для клиента", e);
+            }).start();
+        } catch (IOException e) {
+            throw new RuntimeException("Не могу создать обработчик для клиента", e);
         }
     }
 
-    public String getName() {
-        return name;
-    }
-
     private void authenticate() {
-        while (true){
+        while (true) {
             try {
                 final String str = in.readUTF();
-                if (str.startsWith("/auth")){ // /auth  login1 pass1
+                if (str.startsWith("/auth")) { // /auth login1 pass1
                     final String[] split = str.split("\\s");
                     final String login = split[1];
                     final String pass = split[2];
                     final String nickname = server.getAuthService().getNicknameByLoginAndPassword(login, pass);
-                    if(nickname!=null){
-                        if(!server.isNickNameBusy(nickname)){
-                            sendMessage("/autok" + nickname);
+                    if (nickname != null) {
+                        if (!server.isNicknameBusy(nickname)) {
+                            sendMessage("/authok " + nickname);
                             this.name = nickname;
-                            server.broadcast("пользователь "+ nickname+" зашел в чат");
+                            server.broadcast("SERVER: Пользователь " + nickname + " зашел в чат");
                             server.subscribe(this);
-
-                        }else{
-                            sendMessage("Уже произведен вход в учетную запись");
+                            break;
+                        } else {
+                            sendMessage("SERVER: Уже произведен вход в учетную запись");
                         }
-                    }else {
-                        sendMessage(" Неверные логин или пароль");
+                    } else {
+                        sendMessage("SERVER: Неверные логин / пароль");
                     }
                 }
             } catch (IOException e) {
                 e.printStackTrace();
-                throw  new RuntimeException(e);
+                throw new RuntimeException(e);
             }
         }
     }
 
     private void closeConnection() {
         try {
-            server.unsubscribe(this );
+            server.unsubscribe(this);
             in.close();
             out.close();
             socket.close();
-        }catch (IOException e){
+        } catch (IOException e) {
             e.printStackTrace();
-            throw  new RuntimeException(e);
+            throw new RuntimeException(e);
         }
     }
 
-    public void sendMessage(String msq){
-
-        try{
-            out.writeUTF(msq);
-        }catch (IOException e){
+    public void sendMessage(String msg) {
+        try {
+            System.out.println("SERVER: Send message to " + name + ": " + msg);
+            out.writeUTF(msg);
+        } catch (IOException e) {
             e.printStackTrace();
-            throw  new RuntimeException(e);
+            throw new RuntimeException(e);
         }
     }
 
@@ -96,14 +88,27 @@ public class ClientHandler {
         try {
             while (true) {
                 final String strFromClient = in.readUTF();
-                if("/end".equals(strFromClient)){
-                    return;
+                if (strFromClient.startsWith("/")) {
+                    if (strFromClient.equals("/end")) {
+                        break;
+                    }
+                    if (strFromClient.startsWith("/w ")) {
+                        String[] tokens = strFromClient.split("\\s");
+                        String nick = tokens[1];
+                        String msg = strFromClient.substring(4 + nick.length());
+                        server.sendMsgToClient(this, nick, msg);
+                    }
+                    continue;
                 }
-                System.out.println("Получено сообщение от " + name +": "+strFromClient);
+                server.broadcast(name + ": " + strFromClient);
             }
-        }catch (IOException e ){
+        } catch (IOException e) {
             e.printStackTrace();
             throw new RuntimeException(e);
         }
+    }
+
+    public String getName() {
+        return name;
     }
 }
